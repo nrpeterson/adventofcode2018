@@ -1,4 +1,3 @@
-use std::iter::zip;
 use itertools::{multizip, Itertools};
 use nom::Parser;
 use adventofcode2018::build_main;

@@ -38,20 +38,14 @@ struct Warrior {
 }
 
 enum Step {
-    StartRound,
-    Movement,
-    Attack {
-        target_id: Option<usize>,
-        target_final_hp: Option<usize>
+    WarriorTurn {
+        target: Option<Warrior>
     },
     Done {
         completed_rounds: usize,
         total_hp: usize
     }
 }
-
-#[derive(Copy, Clone)]
-enum Phase { Move, Attack, Done }
 
 #[derive(Clone)]
 struct Level {
@@ -62,7 +56,7 @@ struct Level {
     positions: HashMap<Pair, usize>,
     cur_round: usize,
     turn_order: VecDeque<usize>,
-    phase: Phase
+    is_done: bool
 }
 
 impl Level {
@@ -145,6 +139,10 @@ impl Level {
     }
 
     fn step(&mut self) -> Option<Step> {
+        if self.is_done {
+            return None;
+        }
+
         if self.turn_order.is_empty() {
             self.turn_order = self.warriors.iter().enumerate()
                 .filter(|&(_, &w)| w.hp > 0)
@@ -153,72 +151,52 @@ impl Level {
                 .collect();
 
             self.cur_round += 1;
-            self.phase = Phase::Move;
-            return Some(StartRound);
         }
 
-        let warrior_id = *self.turn_order.front().unwrap();
+        let warrior_id = self.turn_order.pop_front().unwrap();
         if self.warriors[warrior_id].hp == 0 {
-            self.turn_order.pop_front();
-            self.phase = Phase::Move;
             return self.step();
         }
 
         if self.enemy_positions(self.warriors[warrior_id].position).is_empty() {
             let completed_rounds = self.cur_round - 1;
             let total_hp = self.warriors.iter().map(|warrior| warrior.hp).sum::<usize>();
-            self.phase = Phase::Done;
+            self.is_done = true;
             return Some(Done { completed_rounds, total_hp })
         }
 
-        match self.phase {
-            Phase::Done => None,
-            Phase::Move => {
-                let from = self.warriors[warrior_id].position;
-                let to = self.find_move(from);
-                let result = Some(Movement);
+        let from = self.warriors[warrior_id].position;
+        let to = self.find_move(from);
 
-                if let Some(p) = to {
-                    self.warriors[warrior_id].position = p;
-                    self.positions.remove(&from);
-                    self.positions.insert(p, warrior_id);
-                }
-
-                self.phase = Phase::Attack;
-                result
-            },
-            Phase::Attack => {
-                let position = self.warriors[warrior_id].position;
-                let target_position = self.pick_attack(position);
-                let target_id = target_position.map(|p| self.positions[&p]);
-                let target_final_hp = target_id.map(|tid| {
-                    let attack_power = self.warriors[warrior_id].attack_power;
-                    let cur_hp = self.warriors[tid].hp;
-
-                    if cur_hp > attack_power {
-                        self.warriors[tid].hp -= attack_power;
-                    }
-                    else {
-                        self.warriors[tid].hp = 0;
-                        let p = self.warriors[tid].position;
-                        self.positions.remove(&p);
-                    }
-
-                    self.warriors[tid].hp
-                });
-
-                let result = Some(
-                    Attack {
-                        target_id,
-                        target_final_hp
-                });
-
-                self.phase = Phase::Move;
-                self.turn_order.pop_front();
-
-                result
-            }
+        if let Some(p) = to {
+            self.warriors[warrior_id].position = p;
+            self.positions.remove(&from);
+            self.positions.insert(p, warrior_id);
         }
+
+
+        let position = self.warriors[warrior_id].position;
+        let target_position = self.pick_attack(position);
+
+        let target = target_position.map(|tpos| {
+            let tid = self.positions[&tpos];
+            let attack_power = self.warriors[warrior_id].attack_power;
+            let cur_hp = self.warriors[tid].hp;
+
+            if cur_hp > attack_power {
+                self.warriors[tid].hp -= attack_power;
+            }
+            else {
+                self.warriors[tid].hp = 0;
+                self.positions.remove(&tpos);
+            }
+
+            self.warriors[tid]
+        });
+
+        let result = Some(WarriorTurn { target });
+
+        result
     }
 }
 
@@ -274,7 +252,7 @@ fn parse_input(input: &str) -> IResult<&str, Level> {
                 positions,
                 cur_round: 0,
                 turn_order: VecDeque::new(),
-                phase: Phase::Move
+                is_done: false
             }
         }
     )(input)
@@ -296,31 +274,45 @@ fn part1(input: &str) -> usize {
 fn part2(input: &str) -> usize {
     let level = parse_input(input).unwrap().1;
 
-    for power in 4.. {
+    fn test(level: &Level, attack_power: usize) -> Option<usize> {
         let mut level_mod = level.clone();
         level_mod.warriors.iter_mut().for_each(|w| {
             if w.race == Elf {
-                w.attack_power = power;
+                w.attack_power = attack_power;
             }
         });
 
         while let Some(step) = level_mod.next() {
             match step {
-                Done { completed_rounds, total_hp } => return completed_rounds * total_hp,
-                Attack { target_id, target_final_hp, .. } => {
-                    if let Some(0) = target_final_hp {
-                        if let Some(tid) = target_id {
-                            if level_mod.warriors[tid].race == Elf {
-                                break;
-                            }
-                        }
+                Done { completed_rounds, total_hp } => return Some(completed_rounds * total_hp),
+                WarriorTurn { target: Some(target) } => {
+                    if target.hp == 0 && target.race == Elf {
+                        return None
                     }
                 },
                 _ => ()
             }
         }
+
+        unreachable!()
     }
 
+    let mut low = 4;
+    let mut high = 200;
+
+    while low < high {
+        let power = low + (high - low) / 2;
+        let result = test(&level, power);
+        if result.is_some() && test(&level, power - 1).is_none() {
+            return result.unwrap()
+        }
+        else if result.is_some() {
+            high = power - 1;
+        }
+        else {
+            low = power + 1;
+        }
+    }
 
     unreachable!()
 }

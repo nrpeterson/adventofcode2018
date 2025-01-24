@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, HashSet};
-use std::mem::replace;
 use itertools::Itertools;
 use nom::branch::alt;
 use nom::character::complete::{char as ch, newline};
