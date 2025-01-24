@@ -1,14 +1,14 @@
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-use std::ops::{Add, Index};
+use crate::Race::{Elf, Goblin};
+use crate::Step::*;
+use adventofcode2018::build_main;
 use itertools::Itertools;
 use nom::branch::alt;
 use nom::character::complete::{char as ch, newline};
 use nom::combinator::{all_consuming, map, value};
-use nom::IResult;
 use nom::multi::{many1, separated_list1};
-use adventofcode2018::build_main;
-use crate::Race::{Elf, Goblin};
-use crate::Step::*;
+use nom::IResult;
+use std::collections::{HashMap, VecDeque};
+use std::ops::Add;
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 struct Pair(isize, isize);
@@ -38,13 +38,10 @@ struct Warrior {
 }
 
 enum Step {
-    StartRound(usize),
-    Movement { warrior_id: usize, from: Pair, to: Option<Pair> },
+    StartRound,
+    Movement,
     Attack {
-        warrior_id: usize,
-        position: Pair,
         target_id: Option<usize>,
-        target_position: Option<Pair>,
         target_final_hp: Option<usize>
     },
     Done {
@@ -69,25 +66,6 @@ struct Level {
 }
 
 impl Level {
-    fn print(&self) {
-        let s = (0..self.rows).map(|i| {
-            (0..self.cols).map(|j| {
-                let pos = Pair(i as isize, j as isize);
-
-                if self.is_wall[i][j] { '#' }
-                else if let Some(&warrior_id) = self.positions.get(&pos) {
-                    match self.warriors[warrior_id].race {
-                        Elf => 'E',
-                        Goblin => 'G'
-                    }
-                }
-                else { '.' }
-            }).collect::<String>()
-        }).join("\n");
-        println!("{s}");
-        println!();
-    }
-
     fn is_open(&self, pos: Pair) -> bool {
         0 <= pos.0 && pos.0 < self.rows as isize && 0 <= pos.1 && pos.1 < self.cols as isize
             && !self.positions.contains_key(&pos) && !self.is_wall[pos.0 as usize][pos.1 as usize]
@@ -135,8 +113,6 @@ impl Level {
             }
         }
 
-        let index = *self.positions.get(&pos)?;
-
         self.enemy_positions(pos).into_iter()
             .flat_map(|tgt| {
                 DIRECTIONS.map(|d| d + tgt)
@@ -147,7 +123,7 @@ impl Level {
                 Some((dist, tgt, via))
             })
             .min()
-            .and_then(|(_, tgt, via)| via)
+            .and_then(|(_, _, via)| via)
     }
 
     fn pick_attack(&self, pos: Pair) -> Option<Pair> {
@@ -178,7 +154,7 @@ impl Level {
 
             self.cur_round += 1;
             self.phase = Phase::Move;
-            return Some(StartRound(self.cur_round));
+            return Some(StartRound);
         }
 
         let warrior_id = *self.turn_order.front().unwrap();
@@ -200,7 +176,7 @@ impl Level {
             Phase::Move => {
                 let from = self.warriors[warrior_id].position;
                 let to = self.find_move(from);
-                let result = Some(Movement { warrior_id, from, to });
+                let result = Some(Movement);
 
                 if let Some(p) = to {
                     self.warriors[warrior_id].position = p;
@@ -233,10 +209,7 @@ impl Level {
 
                 let result = Some(
                     Attack {
-                        warrior_id,
-                        position,
                         target_id,
-                        target_position,
                         target_final_hp
                 });
 
@@ -309,36 +282,19 @@ fn parse_input(input: &str) -> IResult<&str, Level> {
 
 fn part1(input: &str) -> usize {
     let mut level = parse_input(input).unwrap().1;
-    println!("Initial:");
-    level.print();
-    println!();
 
     while let Some(step) = level.next() {
         match step {
             Done { completed_rounds, total_hp } => return completed_rounds * total_hp,
-            StartRound(i) => { println!("Starting round {i}"); level.print(); println!(); },
-            Movement { warrior_id, from, to } => {
-                if let Some(to) = to {
-                    println!("Warrior {warrior_id} moved from ({},{}) to ({},{})", from.0, from.1, to.0, to.1);
-                }
-            },
-            Attack { warrior_id, position, target_id, target_position, target_final_hp } => {
-                if let (Some(target_id), Some(target_position), Some(target_final_hp)) = (target_id, target_position, target_final_hp) { {
-                    println!("Warrior {warrior_id} attacked warrior {target_id} at ({},{}), leaving them at {target_final_hp} HP", target_position.0, target_position.1);
-                }}
-            }
+            _ => ()
         }
     }
 
-    let Some(Done { completed_rounds, total_hp }) = level.last() else { panic!() };
-    completed_rounds * total_hp
+    unreachable!()
 }
 
 fn part2(input: &str) -> usize {
     let level = parse_input(input).unwrap().1;
-    println!("Initial:");
-    level.print();
-    println!();
 
     for power in 4.. {
         let mut level_mod = level.clone();
@@ -351,7 +307,7 @@ fn part2(input: &str) -> usize {
         while let Some(step) = level_mod.next() {
             match step {
                 Done { completed_rounds, total_hp } => return completed_rounds * total_hp,
-                Attack { warrior_id, position, target_id, target_position, target_final_hp } => {
+                Attack { target_id, target_final_hp, .. } => {
                     if let Some(0) = target_final_hp {
                         if let Some(tid) = target_id {
                             if level_mod.warriors[tid].race == Elf {
