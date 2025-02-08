@@ -1,3 +1,5 @@
+pub mod elf;
+
 #[macro_export]
 macro_rules! build_main {
     ($input:literal, $( $part:literal => $solver:expr),+) => {
